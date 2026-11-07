@@ -50,6 +50,17 @@ session until you switch.
 - Permission prompts: `1` allow once, `2` always allow, `3` reject.
 - Image and document messages are forwarded to the agent.
 
+### Screenshots and files on demand
+
+Send `screenshot` (or `ss`, `screen shot`, `take a screenshot`) and the bridge
+captures the desktop itself and sends the PNG back to WhatsApp — no agent round
+trip, works even while a question is pending.
+
+Agents can also push files: the plugin registers a `whatsapp_send_file` tool
+(`path`, optional `caption`), so a session can send a screenshot, chart or PDF
+straight to your phone. Any local image path an agent mentions in a reply is
+attached automatically as well.
+
 ### Survives restarts
 
 Open questions and the active session are persisted. After a restart the bridge
@@ -135,6 +146,7 @@ Send these from WhatsApp:
 | `where` | Show the active session |
 | `status` | Bridge state and pending prompts |
 | `resend` | Re-send the current question |
+| `screenshot` | Capture the desktop and send it as an image |
 | `chat <text>` | Force a chat reply while a question is pending |
 | `help` | Command list |
 

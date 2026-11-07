@@ -36,6 +36,7 @@ reply from their phone.
 | `new <name> <title>` | Create a session, tag it, make it active |
 | `where` | Show the active session |
 | `status` / `resend` | Bridge state / re-send the open prompt |
+| `screenshot` | Capture the desktop and send the image |
 | `chat <text>` | Force chat while a question is pending |
 
 ## Guidance for the agent

@@ -1,4 +1,4 @@
-import fs from "node:fs"
+﻿import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 import { spawn } from "node:child_process"
@@ -14,10 +14,7 @@ import {
 import QRCode from "qrcode"
 import pino from "pino"
 
-const DATA_ROOT =
-  process.env.OPENCODE_WHATSAPP_DIR ||
-  path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode", "whatsapp")
-const DATA_DIR = DATA_ROOT
+const DATA_DIR = path.join(os.homedir(), ".local", "share", "opencode", "whatsapp")
 const AUTH_DIR = path.join(DATA_DIR, "auth")
 const MEDIA_DIR = path.join(DATA_DIR, "media")
 const QR_PNG_PATH = path.join(DATA_DIR, "qr.png")
@@ -25,26 +22,8 @@ const QR_HTML_PATH = path.join(DATA_DIR, "qr.html")
 const STATUS_PATH = path.join(DATA_DIR, "status.json")
 const LOG_PATH = path.join(DATA_DIR, "bridge.log")
 
-// Locate the OpenCode CLI used as a fallback API client.
-function resolveCliPath(): string {
-  if (process.env.OPENCODE_CLI) return process.env.OPENCODE_CLI
-  if (process.platform === "win32") {
-    const candidate = path.join(
-      os.homedir(),
-      "AppData",
-      "Local",
-      "Programs",
-      "ai.opencode.desktop",
-      "resources",
-      "opencode-cli.exe",
-    )
-    if (fs.existsSync(candidate)) return candidate
-  }
-  return "opencode"
-}
-
-const BOT_PREFIX = "🤖 *OpenCode*"
-const BRIDGE_VERSION = 13
+const BOT_PREFIX = "ðŸ¤– *OpenCode*"
+const BRIDGE_VERSION = 14
 
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -153,6 +132,19 @@ class WhatsAppBridge {
         if (this.inboxTimer) clearInterval(this.inboxTimer)
         this.inboxTimer = undefined
         return
+      }
+      try {
+        const outbox = path.join(DATA_DIR, "outbox.txt")
+        if (fs.existsSync(outbox)) {
+          const text = fs.readFileSync(outbox, "utf8").trim()
+          fs.rmSync(outbox, { force: true })
+          if (text) {
+            logLine(`Outbox message: "${text}"`)
+            void this.sendMessage(text)
+          }
+        }
+      } catch {
+        // ignore
       }
       try {
         const file = path.join(DATA_DIR, "inbox.txt")
@@ -305,15 +297,15 @@ class WhatsAppBridge {
         [
           `${BOT_PREFIX}\n*WhatsApp commands*`,
           "",
-          "`ls` — list sessions (numbered)",
-          "`<number>` — work in that session",
-          "`tag <number> <name>` — give a session a tag",
-          "`@name <instruction>` — one message to a tagged session",
-          "`use <name>` — make a tag active (or `use none`)",
-          "`new <name> <title>` — create a new session",
-          "`where` — show the active session",
-          "`status` — bridge + pending prompts",
-          "`resend` — re-send the current question",
+          "`ls` â€” list sessions (numbered)",
+          "`<number>` â€” work in that session",
+          "`tag <number> <name>` â€” give a session a tag",
+          "`@name <instruction>` â€” one message to a tagged session",
+          "`use <name>` â€” make a tag active (or `use none`)",
+          "`new <name> <title>` â€” create a new session",
+          "`where` â€” show the active session",
+          "`status` â€” bridge + pending prompts",
+          "`resend` â€” re-send the current question",
         ].join("\n"),
       )
       return true
@@ -330,7 +322,7 @@ class WhatsAppBridge {
       sessions.forEach((s, i) => {
         const tag = this.tagNameFor(s.id)
         const active = this.activeSessionID === s.id
-        lines.push(`*${i + 1}.*${active ? " ✅" : ""} ${tag ? `[${tag}] ` : ""}${s.title}`)
+        lines.push(`*${i + 1}.*${active ? " âœ…" : ""} ${tag ? `[${tag}] ` : ""}${s.title}`)
       })
       lines.push(
         "",
@@ -355,7 +347,7 @@ class WhatsAppBridge {
       this.sessionTags[name] = sessionID
       this.saveTags()
       const title = (await this.listSessions(ctx)).find((s) => s.id === sessionID)?.title || sessionID
-      await this.sendMessage(`${BOT_PREFIX}\n✅ Tagged session *${index}* as *${name}*\n${title}`)
+      await this.sendMessage(`${BOT_PREFIX}\nâœ… Tagged session *${index}* as *${name}*\n${title}`)
       return true
     }
 
@@ -368,7 +360,7 @@ class WhatsAppBridge {
       delete this.sessionTags[name.replace(/^[@#]/, "")]
       if (this.activeTag === name) this.activeTag = undefined
       this.saveTags()
-      await this.sendMessage(`${BOT_PREFIX}\n✅ Removed tag *${name}*`)
+      await this.sendMessage(`${BOT_PREFIX}\nâœ… Removed tag *${name}*`)
       return true
     }
 
@@ -378,7 +370,7 @@ class WhatsAppBridge {
         this.activeTag = undefined
         this.activeSessionID = undefined
         this.saveTags()
-        await this.sendMessage(`${BOT_PREFIX}\n✅ Cleared the active session. Messages go to the WhatsApp chat session.`)
+        await this.sendMessage(`${BOT_PREFIX}\nâœ… Cleared the active session. Messages go to the WhatsApp chat session.`)
         return true
       }
       const id = this.resolveTag(name)
@@ -389,7 +381,7 @@ class WhatsAppBridge {
       this.activeTag = name.replace(/^[@#]/, "")
       this.activeSessionID = id
       this.saveTags()
-      await this.sendMessage(`${BOT_PREFIX}\n✅ Now sending messages to *${this.activeTag}*`)
+      await this.sendMessage(`${BOT_PREFIX}\nâœ… Now sending messages to *${this.activeTag}*`)
       return true
     }
 
@@ -399,10 +391,10 @@ class WhatsAppBridge {
         const title = sessions.find((s) => s.id === this.activeSessionID)?.title || this.activeSessionID
         const tag = this.tagNameFor(this.activeSessionID)
         await this.sendMessage(
-          `${BOT_PREFIX}\n🎯 Active session: ${tag ? `*${tag}* — ` : ""}${title}\n\`use none\` to clear.`,
+          `${BOT_PREFIX}\nðŸŽ¯ Active session: ${tag ? `*${tag}* â€” ` : ""}${title}\n\`use none\` to clear.`,
         )
       } else {
-        await this.sendMessage(`${BOT_PREFIX}\n🎯 Active: WhatsApp chat session (no session selected)`)
+        await this.sendMessage(`${BOT_PREFIX}\nðŸŽ¯ Active: WhatsApp chat session (no session selected)`)
       }
       return true
     }
@@ -422,10 +414,10 @@ class WhatsAppBridge {
         this.activeSessionID = id
         this.saveTags()
         await this.sendMessage(
-          `${BOT_PREFIX}\n✅ Created session *${title}*\n${id}${name ? `\nTagged as *${name}*.` : ""}\nActive now — just send your instruction.`,
+          `${BOT_PREFIX}\nâœ… Created session *${title}*\n${id}${name ? `\nTagged as *${name}*.` : ""}\nActive now â€” just send your instruction.`,
         )
       } catch (err: any) {
-        await this.sendMessage(`${BOT_PREFIX}\n❌ Could not create a session: ${String(err?.message || err).slice(0, 200)}`)
+        await this.sendMessage(`${BOT_PREFIX}\nâŒ Could not create a session: ${String(err?.message || err).slice(0, 200)}`)
       }
       return true
     }
@@ -455,7 +447,7 @@ class WhatsAppBridge {
     this.saveTags()
     const title = (await this.listSessions(ctx)).find((s) => s.id === sessionID)?.title || sessionID
     await this.sendMessage(
-      `${BOT_PREFIX}\n✅ Switched to *${title}*\n${this.activeTag ? `Tag: *${this.activeTag}*\n` : ""}Send your instruction now.`,
+      `${BOT_PREFIX}\nâœ… Switched to *${title}*\n${this.activeTag ? `Tag: *${this.activeTag}*\n` : ""}Send your instruction now.`,
     )
     return true
   }
@@ -464,6 +456,7 @@ class WhatsAppBridge {
     if (this.isStale()) return
 
     if (await this.handleCommand(text, ctx)) return
+    if (await this.maybeHandleScreenRequest(text)) return
 
     const trimmed = text.trim()
 
@@ -496,7 +489,16 @@ class WhatsAppBridge {
   }
 
   cliBinary(): string {
-    return resolveCliPath()
+    const cliExe = path.join(
+      os.homedir(),
+      "AppData",
+      "Local",
+      "Programs",
+      "ai.opencode.desktop",
+      "resources",
+      "opencode-cli.exe",
+    )
+    return fs.existsSync(cliExe) ? cliExe : "opencode"
   }
 
   runCliJson(apiPath: string): Promise<any | undefined> {
@@ -644,7 +646,7 @@ class WhatsAppBridge {
         const idleAfter = list.slice(assistantIndex + 1).some((m: any) => (m?.type ?? m?.info?.role) === "idle")
         if (created >= startedAt - 2000 && (completed || idleAfter)) {
           reply = this.extractAssistantText([message])
-          if (!reply) reply = "✅ Done."
+          if (!reply) reply = "âœ… Done."
           break
         }
       }
@@ -652,10 +654,12 @@ class WhatsAppBridge {
     }
 
     if (!reply) {
-      await this.sendMessage(`${BOT_PREFIX}\n⏳ Still working on it — send *status* to check again.`)
+      await this.sendMessage(`${BOT_PREFIX}\nâ³ Still working on it â€” send *status* to check again.`)
       return
     }
     logLine(`Reply preview: ${reply.slice(0, 120).replace(/\s+/g, " ")}`)
+    const attached = await this.sendAttachments(reply)
+    if (attached > 0) logLine(`Attached ${attached} file(s) from the reply`)
     await this.sendChunked(reply, opts?.label)
   }
 
@@ -696,7 +700,7 @@ class WhatsAppBridge {
       this.resolveCtx(this.contexts.values().next().value) ||
       this.contexts.values().next().value
     if (!ctx) {
-      await this.sendMessage(`${BOT_PREFIX}\n❌ No OpenCode location is loaded yet. Try again in a moment.`)
+      await this.sendMessage(`${BOT_PREFIX}\nâŒ No OpenCode location is loaded yet. Try again in a moment.`)
       return
     }
     await this.routeText(text, ctx)
@@ -906,7 +910,7 @@ class WhatsAppBridge {
     <img src="${dataUrl}" alt="WhatsApp QR Code" />
     <ol class="steps">
       <li>Open <b>WhatsApp</b> on your phone</li>
-      <li>Tap <b>Menu (⋮)</b> or <b>Settings</b> &rarr; <b>Linked Devices</b></li>
+      <li>Tap <b>Menu (â‹®)</b> or <b>Settings</b> &rarr; <b>Linked Devices</b></li>
       <li>Tap <b>Link a Device</b> and scan this code</li>
     </ol>
   </div>
@@ -940,7 +944,7 @@ class WhatsAppBridge {
           try {
             fs.writeFileSync(
               QR_HTML_PATH,
-              `<!doctype html><html><head><meta charset="utf-8"/><title>WhatsApp Connected</title><style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{background:#1e293b;border:1px solid #22c55e;border-radius:16px;padding:32px;text-align:center;max-width:420px}h1{color:#4ade80;margin:0 0 12px}p{color:#cbd5e1;font-size:15px;line-height:1.5}</style></head><body><div class="card"><h1>✅ WhatsApp Connected!</h1><p>OpenCode is now linked to <b>${this.selfPhoneJid || "your WhatsApp"}</b>.<br/><br/>Whenever OpenCode has a question or needs permission, it will message you on WhatsApp.</p></div></body></html>`,
+              `<!doctype html><html><head><meta charset="utf-8"/><title>WhatsApp Connected</title><style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{background:#1e293b;border:1px solid #22c55e;border-radius:16px;padding:32px;text-align:center;max-width:420px}h1{color:#4ade80;margin:0 0 12px}p{color:#cbd5e1;font-size:15px;line-height:1.5}</style></head><body><div class="card"><h1>âœ… WhatsApp Connected!</h1><p>OpenCode is now linked to <b>${this.selfPhoneJid || "your WhatsApp"}</b>.<br/><br/>Whenever OpenCode has a question or needs permission, it will message you on WhatsApp.</p></div></body></html>`,
               "utf8",
             )
             const welcomedFlag = path.join(DATA_DIR, "welcomed.flag")
@@ -948,7 +952,7 @@ class WhatsAppBridge {
               fs.writeFileSync(welcomedFlag, new Date().toISOString(), "utf8")
               setTimeout(() => {
                 void this.sendMessage(
-                  `${BOT_PREFIX}\n✅ *Connected to OpenCode!*\nWhenever OpenCode has a question or needs permission, it will message you here.\n\nYou can reply directly with the option number (e.g. *1*) or type your own answer.`,
+                  `${BOT_PREFIX}\nâœ… *Connected to OpenCode!*\nWhenever OpenCode has a question or needs permission, it will message you here.\n\nYou can reply directly with the option number (e.g. *1*) or type your own answer.`,
                 )
               }, 1500)
             }
@@ -1049,6 +1053,185 @@ class WhatsAppBridge {
     await this.start()
   }
 
+  mimeFor(file: string): string {
+    const ext = path.extname(file).toLowerCase()
+    switch (ext) {
+      case ".png":
+        return "image/png"
+      case ".jpg":
+      case ".jpeg":
+        return "image/jpeg"
+      case ".webp":
+        return "image/webp"
+      case ".gif":
+        return "image/gif"
+      case ".pdf":
+        return "application/pdf"
+      case ".mp4":
+        return "video/mp4"
+      default:
+        return "application/octet-stream"
+    }
+  }
+
+  // Send a local file (screenshot, chart, PDF...) to the user's WhatsApp.
+  async sendFile(filePath: string, caption?: string): Promise<boolean> {
+    try {
+      const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(filePath)
+      if (!fs.existsSync(resolved)) {
+        logLine(`sendFile: not found ${resolved}`)
+        return false
+      }
+      const stat = fs.statSync(resolved)
+      if (stat.size > 60 * 1024 * 1024) {
+        logLine(`sendFile: too large ${resolved} (${stat.size} bytes)`)
+        return false
+      }
+      const jid = this.getTargetJid()
+      if (!jid) return false
+
+      const mime = this.mimeFor(resolved)
+      const buffer = fs.readFileSync(resolved)
+      const isImage = mime.startsWith("image/")
+      const payload: any = isImage
+        ? { image: buffer, mimetype: mime, caption: caption || "" }
+        : mime === "video/mp4"
+          ? { video: buffer, mimetype: mime, caption: caption || "" }
+          : { document: buffer, mimetype: mime, fileName: path.basename(resolved), caption: caption || "" }
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (!this.connected || !this.sock) {
+          await this.forceReconnect()
+          await new Promise((r) => setTimeout(r, 3500))
+        }
+        try {
+          const sent = await this.sock.sendMessage(jid, payload)
+          if (sent?.key?.id) this.sentMessageIds.add(sent.key.id)
+          logLine(`Sent ${isImage ? "image" : "file"} to ${jid}: ${path.basename(resolved)}`)
+          return true
+        } catch (err: any) {
+          logLine(`sendFile attempt ${attempt} failed: ${err?.message || err}`)
+          await this.forceReconnect()
+          await new Promise((r) => setTimeout(r, 2000 * attempt))
+        }
+      }
+      return false
+    } catch (err: any) {
+      logLine(`sendFile error: ${err?.message || err}`)
+      return false
+    }
+  }
+
+  // Find image/file paths mentioned in an agent reply so they can be attached.
+  findFilePaths(text: string): string[] {
+    const found = new Set<string>()
+    const patterns = [
+      /!\[[^\]]*\]\(([^)]+)\)/g,
+      /(?:[A-Za-z]:\\[^\s"'`<>|*?]+\.(?:png|jpe?g|webp|gif|pdf|mp4))/gi,
+      /(?:~?\/[^\s"'`<>|*?]+\.(?:png|jpe?g|webp|gif|pdf|mp4))/g,
+      /(?:file:\/\/\/?[^\s"'`<>|*?]+\.(?:png|jpe?g|webp|gif|pdf|mp4))/gi,
+    ]
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null
+      while ((match = pattern.exec(text)) !== null) {
+        let value = (match[1] || match[0]).replace(/^file:\/\/\/?/, "")
+        if (process.platform === "win32" && /^\/[A-Za-z]:/.test(value)) value = value.slice(1)
+        if (value.includes("://")) continue
+        found.add(value)
+      }
+    }
+    return [...found]
+  }
+
+  runCommand(command: string, args: string[]): Promise<boolean> {
+    return new Promise((resolve) => {
+      try {
+        const child = spawn(command, args, { stdio: "ignore", windowsHide: true })
+        child.on("error", () => resolve(false))
+        child.on("close", (code) => resolve(code === 0))
+      } catch {
+        resolve(false)
+      }
+    })
+  }
+
+  // Capture the desktop and return the saved image path.
+  async captureScreen(): Promise<string | undefined> {
+    ensureDirs()
+    const file = path.join(MEDIA_DIR, `screenshot-${Date.now()}.png`)
+    try {
+      if (process.platform === "win32") {
+        const escaped = file.replace(/\\/g, "\\\\")
+        const script =
+          "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; " +
+          "$vs=[System.Windows.Forms.SystemInformation]::VirtualScreen; " +
+          "$bmp=New-Object System.Drawing.Bitmap $vs.Width,$vs.Height; " +
+          "$g=[System.Drawing.Graphics]::FromImage($bmp); " +
+          "$g.CopyFromScreen($vs.Left,$vs.Top,0,0,$bmp.Size); " +
+          `$bmp.Save('${escaped}',[System.Drawing.Imaging.ImageFormat]::Png); ` +
+          "$g.Dispose(); $bmp.Dispose()"
+        await this.runCommand("powershell", ["-NoProfile", "-NonInteractive", "-Command", script])
+      } else if (process.platform === "darwin") {
+        await this.runCommand("screencapture", ["-x", file])
+      } else {
+        const attempts: Array<[string, string[]]> = [
+          ["gnome-screenshot", ["-f", file]],
+          ["spectacle", ["-b", "-n", "-o", file]],
+          ["scrot", ["-o", file]],
+          ["import", ["-window", "root", file]],
+        ]
+        for (const [cmd, args] of attempts) {
+          await this.runCommand(cmd, args)
+          if (fs.existsSync(file)) break
+        }
+      }
+    } catch (err: any) {
+      logLine(`captureScreen error: ${err?.message || err}`)
+    }
+    return fs.existsSync(file) ? file : undefined
+  }
+
+  // "screenshot" style requests are handled directly, without involving an agent.
+  async maybeHandleScreenRequest(text: string): Promise<boolean> {
+    const clean = text.trim().toLowerCase().replace(/[.!?]+$/, "")
+    const wants =
+      clean === "screenshot" ||
+      clean === "ss" ||
+      clean === "screen shot" ||
+      clean === "screen capture" ||
+      clean === "take a screenshot" ||
+      clean === "send a screenshot" ||
+      /^(take |send |get |show )?(me )?(a )?(desktop |screen )?(screenshot|screen shot|screen capture)$/.test(clean)
+    if (!wants) return false
+
+    await this.sendMessage(`${BOT_PREFIX}\nðŸ“¸ Capturing the screenâ€¦`)
+    const file = await this.captureScreen()
+    if (!file) {
+      await this.sendMessage(`${BOT_PREFIX}\nâŒ Could not capture the screen on this machine.`)
+      return true
+    }
+    const ok = await this.sendFile(file, "Desktop screenshot")
+    if (!ok) await this.sendMessage(`${BOT_PREFIX}\nâŒ Captured the screen but could not send the image.`)
+    return true
+  }
+
+  async sendAttachments(text: string): Promise<number> {    let count = 0
+    for (const candidate of this.findFilePaths(text)) {
+      const resolved = path.isAbsolute(candidate)
+        ? candidate
+        : path.isAbsolute(candidate.replace(/^~/, ""))
+          ? candidate.replace(/^~/, os.homedir())
+          : candidate.startsWith("/")
+            ? candidate
+            : path.resolve(candidate)
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+        const ok = await this.sendFile(resolved)
+        if (ok) count++
+      }
+    }
+    return count
+  }
+
   formatFieldPrompt(field: FormField, index: number, total: number): string {
     const lines: string[] = []
     const prefix = total > 1 ? `*Question ${index + 1} of ${total}:*\n` : ""
@@ -1059,7 +1242,7 @@ class WhatsAppBridge {
     if (field.options && field.options.length > 0) {
       lines.push("")
       field.options.forEach((opt, idx) => {
-        const detail = opt.description ? ` — ${opt.description}` : ""
+        const detail = opt.description ? ` â€” ${opt.description}` : ""
         lines.push(`*${idx + 1}.* ${opt.label}${detail}`)
       })
       if (field.type === "multiselect") {
@@ -1106,7 +1289,7 @@ class WhatsAppBridge {
     this.persistPending()
 
     const projectName = path.basename(ctx?.location?.directory || "") || "OpenCode"
-    const header = `${BOT_PREFIX} — *${projectName}*\n`
+    const header = `${BOT_PREFIX} â€” *${projectName}*\n`
     const body = this.formatFieldPrompt(fields[0], 0, fields.length)
     await this.sendMessage(`${header}\n${body}`)
   }
@@ -1127,13 +1310,13 @@ class WhatsAppBridge {
     this.notifiedIds.add(hash)
 
     const projectName = path.basename(ctx?.location?.directory || "") || "OpenCode"
-    const lines: string[] = [`${BOT_PREFIX} — *${projectName}*`]
+    const lines: string[] = [`${BOT_PREFIX} â€” *${projectName}*`]
     questions.forEach((q: any, qIdx: number) => {
       const qHeader = q.header ? `[${q.header}] ` : ""
       lines.push(`\n*${questions.length > 1 ? `Q${qIdx + 1}: ` : ""}${qHeader}${q.question}*`)
       if (Array.isArray(q.options)) {
         q.options.forEach((opt: any, oIdx: number) => {
-          lines.push(`*${oIdx + 1}.* ${opt.label}${opt.description ? ` — ${opt.description}` : ""}`)
+          lines.push(`*${oIdx + 1}.* ${opt.label}${opt.description ? ` â€” ${opt.description}` : ""}`)
         })
       }
     })
@@ -1166,7 +1349,7 @@ class WhatsAppBridge {
 
     const projectName = path.basename(ctx?.location?.directory || "") || "OpenCode"
     const lines = [
-      `${BOT_PREFIX} — *Permission Needed (${projectName})*`,
+      `${BOT_PREFIX} â€” *Permission Needed (${projectName})*`,
       "",
       `Action: \`${data.action}\``,
       pending.resources.length ? `Resources: \`${pending.resources.join(", ")}\`` : "",
@@ -1196,7 +1379,7 @@ class WhatsAppBridge {
     const active = this.pendingQueue[this.pendingQueue.length - 1]
     if (!active) {
       await this.sendMessage(
-        `${BOT_PREFIX}\n✅ Nothing is waiting on you right now. OpenCode has no unanswered question or permission request.`,
+        `${BOT_PREFIX}\nâœ… Nothing is waiting on you right now. OpenCode has no unanswered question or permission request.`,
       )
       return
     }
@@ -1258,6 +1441,7 @@ class WhatsAppBridge {
         await this.resendPending()
         return
       }
+      if (await this.maybeHandleScreenRequest(text)) return
     }
 
     const bridgeCtx =
@@ -1317,10 +1501,10 @@ class WhatsAppBridge {
       this.removePendingPermission(active.requestID)
       const ok = await this.submitPermissionReply(active, decision)
       if (ok) {
-        await this.sendMessage(`${BOT_PREFIX}\n✅ Permission *${decision}* submitted.`)
+        await this.sendMessage(`${BOT_PREFIX}\nâœ… Permission *${decision}* submitted.`)
       } else {
         await this.sendMessage(
-          `${BOT_PREFIX}\n❌ Could not submit the permission reply — it may have already been answered in OpenCode.`,
+          `${BOT_PREFIX}\nâŒ Could not submit the permission reply â€” it may have already been answered in OpenCode.`,
         )
       }
       return
@@ -1342,10 +1526,10 @@ class WhatsAppBridge {
         this.removePendingForm(active.formID)
         const ok = await this.submitFormReply(active)
         if (ok) {
-          await this.sendMessage(`${BOT_PREFIX}\n✅ Answer submitted to OpenCode!`)
+          await this.sendMessage(`${BOT_PREFIX}\nâœ… Answer submitted to OpenCode!`)
         } else {
           await this.sendMessage(
-            `${BOT_PREFIX}\n❌ Could not submit that answer — the question may have already been answered in OpenCode.`,
+            `${BOT_PREFIX}\nâŒ Could not submit that answer â€” the question may have already been answered in OpenCode.`,
           )
         }
       }
@@ -1549,7 +1733,17 @@ class WhatsAppBridge {
 
   callCliApi(method: string, apiPath: string, payload: unknown): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn(this.cliBinary(), ["api", method, apiPath, "--data", JSON.stringify(payload)], {
+      const cliExe = path.join(
+        os.homedir(),
+        "AppData",
+        "Local",
+        "Programs",
+        "ai.opencode.desktop",
+        "resources",
+        "opencode-cli.exe",
+      )
+      const bin = fs.existsSync(cliExe) ? cliExe : "opencode"
+      const child = spawn(bin, ["api", method, apiPath, "--data", JSON.stringify(payload)], {
         stdio: "ignore",
         windowsHide: true,
       })
@@ -1567,7 +1761,14 @@ class WhatsAppBridge {
 function getBridge(): WhatsAppBridge {
   const g = globalThis as any
   const existing = g.__opencodeWhatsAppBridge as WhatsAppBridge | undefined
-  if (existing) return existing
+  if (existing && existing.version === BRIDGE_VERSION) return existing
+  if (existing) {
+    try {
+      if (typeof existing.stop === "function") existing.stop()
+    } catch {
+      // ignore
+    }
+  }
   g.__opencodeWhatsAppGeneration = (g.__opencodeWhatsAppGeneration ?? 0) + 1
   const bridge = new WhatsAppBridge()
   bridge.generation = g.__opencodeWhatsAppGeneration
@@ -1639,11 +1840,11 @@ export default {
           description: "Check WhatsApp connection status or send a test WhatsApp message",
           execute: async ({ sessionID }: any) => {
             const sent = await bridge.sendMessage(
-              `${BOT_PREFIX}\n🔔 Test notification from OpenCode! Your WhatsApp question bridge is working.`,
+              `${BOT_PREFIX}\nðŸ”” Test notification from OpenCode! Your WhatsApp question bridge is working.`,
             )
             const statusText = bridge.connected
-              ? `✅ WhatsApp is connected (${bridge.getTargetJid()}) and a test message was sent!`
-              : `⏳ WhatsApp is not linked yet. Scan the QR code at: ${QR_HTML_PATH}`
+              ? `âœ… WhatsApp is connected (${bridge.getTargetJid()}) and a test message was sent!`
+              : `â³ WhatsApp is not linked yet. Scan the QR code at: ${QR_HTML_PATH}`
             await ctx.session.synthetic({
               sessionID,
               text: statusText,
@@ -1655,11 +1856,43 @@ export default {
       logLine(`Command registration error: ${err?.message || err}`)
     }
 
+    // 4. Tool: let the agent push files/images (screenshots) to WhatsApp
+    let toolReg: any
+    try {
+      toolReg = await ctx.tool.transform((editor: any) => {
+        editor.add({
+          name: "whatsapp_send_file",
+          description:
+            "Send a local file from this computer to the user's WhatsApp (screenshot, photo, chart, PDF). Use this whenever the user asks to receive an image or file on WhatsApp.",
+          input: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Absolute path to the file to send" },
+              caption: { type: "string", description: "Optional caption shown with the file" },
+            },
+            required: ["path"],
+            additionalProperties: false,
+          },
+          execute: async (input: any) => {
+            const ok = await bridge.sendFile(String(input?.path || ""), input?.caption)
+            return {
+              content: ok
+                ? `Sent ${input?.path} to the user's WhatsApp.`
+                : `Could not send ${input?.path}. Check that the path exists and WhatsApp is connected.`,
+            }
+          },
+        })
+      })
+    } catch (err: any) {
+      logLine(`Tool registration error: ${err?.message || err}`)
+    }
+
     return async () => {
       controller.abort()
       bridge.contexts.delete(dir)
       if (toolHook?.dispose) await toolHook.dispose()
       if (cmdReg?.dispose) await cmdReg.dispose()
+      if (toolReg?.dispose) await toolReg.dispose()
     }
   },
 }
