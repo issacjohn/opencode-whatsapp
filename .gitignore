@@ -1,0 +1,17 @@
+node_modules/
+npm-debug.log*
+yarn.lock
+package-lock.json
+.DS_Store
+Thumbs.db
+
+# Runtime data (never commit paired-device credentials)
+auth/
+*.log
+qr.png
+qr.html
+status.json
+pending.json
+sessions.json
+chat-session.json
+media/

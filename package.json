@@ -1,0 +1,48 @@
+{
+  "name": "opencode-whatsapp",
+  "version": "1.0.0",
+  "description": "WhatsApp bridge for OpenCode: answer questions, switch sessions, and chat with your agent from WhatsApp.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Isaac John",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/issacjohn/opencode-whatsapp.git"
+  },
+  "homepage": "https://github.com/issacjohn/opencode-whatsapp#readme",
+  "bugs": {
+    "url": "https://github.com/issacjohn/opencode-whatsapp/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "whatsapp",
+    "baileys",
+    "agent",
+    "notifications"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "skills",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}
