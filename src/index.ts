@@ -1,4 +1,4 @@
-﻿import fs from "node:fs"
+import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 import { spawn } from "node:child_process"
@@ -23,7 +23,7 @@ const STATUS_PATH = path.join(DATA_DIR, "status.json")
 const LOG_PATH = path.join(DATA_DIR, "bridge.log")
 
 const BOT_PREFIX = "ðŸ¤– *OpenCode*"
-const BRIDGE_VERSION = 14
+const BRIDGE_VERSION = 16
 
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -117,6 +117,9 @@ class WhatsAppBridge {
   generation: number = 0
   pruneTimer?: ReturnType<typeof setInterval>
   chatChain: Promise<void> = Promise.resolve()
+  chatActive = new Map<string, number>()
+  doneNotified = new Map<string, number>()
+  doneEvents = new Set<string>()
   chatSessionID?: string
   chatSessionDir?: string
   inboxTimer?: ReturnType<typeof setInterval>
@@ -417,7 +420,7 @@ class WhatsAppBridge {
           `${BOT_PREFIX}\nâœ… Created session *${title}*\n${id}${name ? `\nTagged as *${name}*.` : ""}\nActive now â€” just send your instruction.`,
         )
       } catch (err: any) {
-        await this.sendMessage(`${BOT_PREFIX}\nâŒ Could not create a session: ${String(err?.message || err).slice(0, 200)}`)
+        await this.sendMessage(`${BOT_PREFIX}\nâŒ Could not create a session: ${String(err?.message || err).slice(0, 200)}`)
       }
       return true
     }
@@ -581,6 +584,7 @@ class WhatsAppBridge {
     opts?: { sessionID?: string; label?: string },
   ): Promise<void> {
     const sessionID = opts?.sessionID ?? (await this.getChatSession(ctx))
+    this.chatActive.set(sessionID, Date.now() + 15 * 60 * 1000)
 
     const promptText = text && text.trim() ? text : files?.length ? "[Sent media from WhatsApp]" : ""
     if (typeof ctx?.session?.prompt !== "function" && !(files && files.length)) {
@@ -654,7 +658,7 @@ class WhatsAppBridge {
     }
 
     if (!reply) {
-      await this.sendMessage(`${BOT_PREFIX}\nâ³ Still working on it â€” send *status* to check again.`)
+      await this.sendMessage(`${BOT_PREFIX}\nâ³ Still working on it â€” send *status* to check again.`)
       return
     }
     logLine(`Reply preview: ${reply.slice(0, 120).replace(/\s+/g, " ")}`)
@@ -700,7 +704,7 @@ class WhatsAppBridge {
       this.resolveCtx(this.contexts.values().next().value) ||
       this.contexts.values().next().value
     if (!ctx) {
-      await this.sendMessage(`${BOT_PREFIX}\nâŒ No OpenCode location is loaded yet. Try again in a moment.`)
+      await this.sendMessage(`${BOT_PREFIX}\nâŒ No OpenCode location is loaded yet. Try again in a moment.`)
       return
     }
     await this.routeText(text, ctx)
@@ -1207,11 +1211,11 @@ class WhatsAppBridge {
     await this.sendMessage(`${BOT_PREFIX}\nðŸ“¸ Capturing the screenâ€¦`)
     const file = await this.captureScreen()
     if (!file) {
-      await this.sendMessage(`${BOT_PREFIX}\nâŒ Could not capture the screen on this machine.`)
+      await this.sendMessage(`${BOT_PREFIX}\nâŒ Could not capture the screen on this machine.`)
       return true
     }
     const ok = await this.sendFile(file, "Desktop screenshot")
-    if (!ok) await this.sendMessage(`${BOT_PREFIX}\nâŒ Captured the screen but could not send the image.`)
+    if (!ok) await this.sendMessage(`${BOT_PREFIX}\nâŒ Captured the screen but could not send the image.`)
     return true
   }
 
@@ -1364,6 +1368,84 @@ class WhatsAppBridge {
     await this.sendMessage(lines.join("\n"))
   }
 
+  // Notify WhatsApp when a session finishes a task, so the user hears back
+  // even when the run was not started from WhatsApp.
+  async handleExecutionDone(event: any, ctx: any) {
+    try {
+      const data = event?.data || {}
+      const sessionID = data.sessionID || data.id
+      if (!sessionID || !String(sessionID).startsWith("ses")) return
+
+      if (event?.id) {
+        if (this.doneEvents.has(event.id)) return
+        this.doneEvents.add(event.id)
+        if (this.doneEvents.size > 400) {
+          const first = this.doneEvents.values().next().value
+          if (first) this.doneEvents.delete(first)
+        }
+      }
+
+      if (this.chatActive.has(sessionID)) return
+      const last = this.doneNotified.get(sessionID) || 0
+      if (Date.now() - last < 60_000) return
+
+      let info: any
+      try {
+        const result = await ctx.session.get({ sessionID })
+        info = result?.data ?? result
+      } catch {
+        return
+      }
+      if (!info?.id) return
+      if (info.parentID) return
+      if (info.title === "WhatsApp chat") return
+
+      const messages = await this.readSessionMessages(ctx, sessionID)
+      const lastAssistant = [...messages].reverse().find((m: any) => (m?.type ?? m?.info?.role) === "assistant")
+      if (!lastAssistant) return
+      const created = lastAssistant?.time?.created ?? lastAssistant?.info?.time?.created ?? 0
+      if (Date.now() - created > 10 * 60 * 1000) return
+
+      const summary = this.extractAssistantText(messages)
+      if (!summary) return
+
+      this.doneNotified.set(sessionID, Date.now())
+
+      const project = path.basename(info?.location?.directory || "") || "OpenCode"
+      const tag = this.tagNameFor(sessionID)
+      const head = tag ? `[${tag}] ${info.title || sessionID}` : info.title || sessionID
+      const status = event.type
+      const icon = status === "session.execution.failed" ? "⚠️" : status === "session.execution.interrupted" ? "⏹" : "✅"
+      const label =
+        status === "session.execution.failed"
+          ? "failed"
+          : status === "session.execution.interrupted"
+            ? "stopped"
+            : "finished"
+      const errorText =
+        status === "session.execution.failed"
+          ? `\n_${String(data?.error?.message || data?.error || "unknown error").slice(0, 300)}_`
+          : ""
+      const trimmed = summary.length > 700 ? `${summary.slice(0, 700)}…` : summary
+      logLine(`Done notification: ${sessionID} (${status})`)
+
+      await this.sendMessage(
+        [
+          `${icon} *${head}* ${label}`,
+          `_${project}_${errorText}`,
+          "",
+          trimmed,
+          "",
+          "_Reply to continue in this session._",
+        ]
+          .filter((line, i) => line !== "" || i === 2)
+          .join("\n"),
+      )
+    } catch (err: any) {
+      logLine(`handleExecutionDone error: ${err?.message || err}`)
+    }
+  }
+
   removePendingForm(formID: string) {
     this.pendingQueue = this.pendingQueue.filter((p) => !(p.kind === "form" && p.formID === formID))
     this.persistPending()
@@ -1504,7 +1586,7 @@ class WhatsAppBridge {
         await this.sendMessage(`${BOT_PREFIX}\nâœ… Permission *${decision}* submitted.`)
       } else {
         await this.sendMessage(
-          `${BOT_PREFIX}\nâŒ Could not submit the permission reply â€” it may have already been answered in OpenCode.`,
+          `${BOT_PREFIX}\nâŒ Could not submit the permission reply â€” it may have already been answered in OpenCode.`,
         )
       }
       return
@@ -1529,7 +1611,7 @@ class WhatsAppBridge {
           await this.sendMessage(`${BOT_PREFIX}\nâœ… Answer submitted to OpenCode!`)
         } else {
           await this.sendMessage(
-            `${BOT_PREFIX}\nâŒ Could not submit that answer â€” the question may have already been answered in OpenCode.`,
+            `${BOT_PREFIX}\nâŒ Could not submit that answer â€” the question may have already been answered in OpenCode.`,
           )
         }
       }
@@ -1799,7 +1881,16 @@ export default {
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({
-          types: ["form.created", "form.replied", "form.cancelled", "permission.asked", "permission.replied"],
+          types: [
+            "form.created",
+            "form.replied",
+            "form.cancelled",
+            "permission.asked",
+            "permission.replied",
+            "session.execution.succeeded",
+            "session.execution.failed",
+            "session.execution.interrupted",
+          ],
           signal: controller.signal,
         })) {
           if (event.type === "form.created") {
@@ -1810,6 +1901,12 @@ export default {
             await bridge.handlePermissionAsked(event.data, ctx)
           } else if (event.type === "permission.replied") {
             if (event.data?.id) bridge.removePendingPermission(event.data.id)
+          } else if (
+            event.type === "session.execution.succeeded" ||
+            event.type === "session.execution.failed" ||
+            event.type === "session.execution.interrupted"
+          ) {
+            await bridge.handleExecutionDone(event, ctx)
           }
         }
       } catch (err: any) {
@@ -1844,7 +1941,7 @@ export default {
             )
             const statusText = bridge.connected
               ? `âœ… WhatsApp is connected (${bridge.getTargetJid()}) and a test message was sent!`
-              : `â³ WhatsApp is not linked yet. Scan the QR code at: ${QR_HTML_PATH}`
+              : `â³ WhatsApp is not linked yet. Scan the QR code at: ${QR_HTML_PATH}`
             await ctx.session.synthetic({
               sessionID,
               text: statusText,

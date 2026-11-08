@@ -43,6 +43,8 @@ reply from their phone.
 
 - Prefer the `question` tool for decisions: it reaches WhatsApp automatically, so
   do not also print the question and wait.
+- When a task finishes, the bridge already notifies the user on WhatsApp with your
+  final message — no extra "I am done" broadcast is needed.
 - Keep options short and self-contained; the user answers with a number.
 - For permission prompts, explain the action in the tool call so the WhatsApp
   text is understandable without the desktop UI.

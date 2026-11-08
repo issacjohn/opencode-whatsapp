@@ -50,6 +50,14 @@ session until you switch.
 - Permission prompts: `1` allow once, `2` always allow, `3` reject.
 - Image and document messages are forwarded to the agent.
 
+### Completion notifications
+
+Any session that finishes a task — started from the desktop, a schedule, or another
+agent — sends a short summary to WhatsApp: the session name, the project, the final
+message, and a note that replying continues in that session. Failed and interrupted
+runs are labelled too. Runs you started from WhatsApp are not duplicated; the chat
+reply itself is the notification.
+
 ### Screenshots and files on demand
 
 Send `screenshot` (or `ss`, `screen shot`, `take a screenshot`) and the bridge
